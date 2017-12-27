@@ -21,6 +21,8 @@ from plotly.exceptions import PlotlyError
 ipython = optional_imports.get_module('IPython')
 ipython_display = optional_imports.get_module('IPython.display')
 matplotlib = optional_imports.get_module('matplotlib')
+pyvirtualdisplay = optional_imports.get_module('pyvirtualdisplay')
+webdriver = optional_imports.get_module('selenium.webdriver')
 
 __PLOTLY_OFFLINE_INITIALIZED = False
 
@@ -386,7 +388,7 @@ def plot(figure_or_data, show_link=True, link_text='Export to plot.ly',
          validate=True, output_type='file', include_plotlyjs=True,
          filename='temp-plot.html', auto_open=True, image=None,
          image_filename='plot_image', image_width=800, image_height=600,
-         config=None):
+         config=None, save_img=False):
     """ Create a plotly graph locally as an HTML document or string.
 
     Example:
@@ -449,6 +451,9 @@ def plot(figure_or_data, show_link=True, link_text='Export to plot.ly',
     config (default=None) -- Plot view options dictionary. Keyword arguments
         `show_link` and `link_text` set the associated options in this
         dictionary if it doesn't contain them already.
+    save_img (default=False) -- Uses a selenium webdriver and pyvirtualdisplay
+        to silently open the output .html file and download a plot image in the
+        specified format.
     """
     if output_type not in ['div', 'file']:
         raise ValueError(
@@ -502,6 +507,7 @@ def plot(figure_or_data, show_link=True, link_text='Export to plot.ly',
                                        height=image_height,
                                        filename=image_filename,
                                        plot_id=plotdivid)
+
             else:
                 script = ''
 
@@ -519,6 +525,20 @@ def plot(figure_or_data, show_link=True, link_text='Export to plot.ly',
         url = 'file://' + os.path.abspath(filename)
         if auto_open:
             webbrowser.open(url)
+
+        if save_img:
+            if not image:
+                warnings.warn(
+                    "The image type was not specified and will not be generated. "
+                    "To save an image, you must specify a type with e.g. `image='png'`.")
+            if auto_open and image:
+                warnings.warn(
+                    "Using image=type and auto_open=True (default) downloads an image automatically. "
+                    "Use auto_open=False with save_img to avoid duplicate files.")
+            display, driver = create_webdriver()
+            driver.get(url)
+            driver.close()
+            display.stop()
 
         return url
 
@@ -718,3 +738,21 @@ def enable_mpl_offline(resize=False, strip_style=False,
     formatter.for_type(matplotlib.figure.Figure,
                        lambda fig: iplot_mpl(fig, resize, strip_style, verbose,
                                              show_link, link_text, validate))
+
+
+def create_webdriver(dl_path=os.path.expanduser('~/Downloads')):
+    """
+    Creates a hidden pyvirtualdisplay to capture the subsequently created
+    webdriver. Sets the download directory passed by the user as well.
+    """
+    
+    display = pyvirtualdisplay.Display(visible=0)
+    display.start()
+
+    chrome_options = webdriver.ChromeOptions()
+    prefs = {"download.default_directory": dl_path}
+    chrome_options.add_experimental_option("prefs", prefs)
+
+    driver = webdriver.Chrome(chrome_options=chrome_options)
+    return display, driver
+
